@@ -1,3 +1,4 @@
+**/*test*
 **/*$py.class
 **/*.cover
 **/*.egg
@@ -74,3 +75,4 @@
 **/venv.bak/
 **/venv/
 **/wheels/
+**/cache.json
