@@ -3,14 +3,16 @@
 # Author:       Casey Sparks
 # Date:         January 21, 2023
 # Description:
-'''Class for sending commands to the Tesla vehicle API.'''
+'''Class for the Tesla vehicle API.'''
 
 import sys
 from locale import setlocale, LC_ALL
 from logging import getLogger
+from os import getenv
 from random import randint
 from typing import NoReturn, Optional, Union
-from .._request_wrappers import post                                        # Generic POST wrappers for the Tesla API.
+from urllib.parse import urljoin
+from ._request_wrappers import get, post                                    # Generic GET wrappers for the Tesla API.
 
 log = getLogger(__name__)                                                   # Enable logging
 
@@ -18,7 +20,7 @@ setlocale(LC_ALL, 'en_US.UTF-8')                                            # Se
 
 
 class Command():
-    '''Vehicle module for the Tesla API.'''
+    '''Class for sending commands to the Tesla.'''
     def __init__(
         self,
         parent_class: type
@@ -35,7 +37,8 @@ class Command():
         variable: Union[int, str, None]
             ) -> bool:
         '''
-        Evaluates if a variable is None, tries to set it to user input if it is, and returns the same variable.
+        Evaluates if a variable is None, tries to set it to user input if it is, and shell is interactive,
+        then returns the variable. Else raise TypeError.
             :param variable: The variable to evaluate.
         '''
         if variable is None:                                                # Check if variable is set.
@@ -332,3 +335,98 @@ class Command():
             5: Rear right
         '''
         return post(self, 'command/auto_conditioning_stop', params={'heater': heater, 'level': level})
+
+
+class State():
+    '''Class for getting Tesla vehicle state.'''
+    def __init__(
+        self,
+        parent_class: type
+            ) -> NoReturn:
+        '''
+        Vehicle state class. Used to get data about a Tesla vehicle.
+            :param parent_class:    The parent Vehicle class.
+        '''
+        self.base_url = parent_class.base_url
+        self.headers = parent_class.headers
+
+    def vehicle_data(self) -> dict:
+        '''A rollup of all the data request endpoints plus vehicle configuration.'''
+        return get(self, 'vehicle_data')
+
+    def latest_vehicle_data(self) -> dict:
+        '''Cached data, pushed by the vehicle on sleep, wake and around OTAs.'''
+        return get(self, 'latest_vehicle_data')
+
+    def charge_state(self) -> dict:
+        '''Get charge information about a Tesla.'''
+        return get(self, 'data_request/charge_state')
+
+    def climate_state(self) -> dict:
+        '''Get climate information from a Tesla.'''
+        return get(self, 'data_request/climate_state')
+
+    def drive_state(self) -> dict:
+        '''Get drive state information from a Tesla.'''
+        return get(self, 'data_request/drive_state')
+
+    def gui_settings(self) -> dict:
+        '''Get GUI settings from a Tesla.'''
+        return get(self, 'data_request/gui_settings')
+
+    def vehicle_state(self) -> dict:
+        '''Returns the vehicle's physical state, such as which doors are open.'''
+        return get(self, 'data_request/vehicle_state')
+
+    def vehicle_config(self) -> dict:
+        '''Returns the vehicle's configuration information including model, color, badging and wheels.'''
+        return get(self, 'data_request/vehicle_config')
+
+    def mobile_enabled(self) -> dict:
+        '''Lets you know if the Mobile Access setting is enabled in the car.'''
+        return get(self, 'mobile_enabled')
+
+    def nearby_charging_sites(self) -> dict:
+        '''Returns a list of nearby Tesla-operated charging stations.'''
+        return get(self, 'nearby_charging_sites')
+
+    def service_data(self) -> dict:
+        '''Get service data from a Tesla.'''
+        return get(self, 'service_data')
+
+
+class Vehicle():
+    '''Parent class for a Tesla vehicle.'''
+    def __init__(
+        self,
+        client: type,
+        data: dict,
+        licence_plate: Optional[str] = None,
+        speed_limit_pin: Optional[int] = getenv('TESLA_SPEED_PIN') or None,
+        valet_pin: Optional[int] = getenv('TESLA_VALET_PIN') or None
+            ) -> NoReturn:
+        '''
+        Vehicle class. Used to get data about, and send commands to, a Tesla vehicle.
+            :param client:          Instance of tesla.Client().
+            :param data:            Vehicle data as returned by tesla.account.Account.vehicles().
+            :param speed_limit_pin: PIN for speed limit mode.
+            :param valet_pin:       PIN for valet mode.
+        '''
+        self.data = {**data, **{'licence_plate': str(licence_plate)}}
+        self.base_url = urljoin(client.base_url, f'vehicles/{data["id"]}/')
+        self.headers = {**client.headers, **{'Authorization': f'Bearer {client.token["access_token"]}'}}
+        self.Command = Command(self)
+        self.State = State(self)
+
+    def set_licence_plate(
+        self,
+        licence_plate: str
+            ) -> NoReturn:
+        '''
+        Add licence plate data to Vehicle object.
+            :param licence_plate:   The licence plate of your vehicle.
+        '''
+        if licence_plate.isalnum():
+            self.data['licence_plate'] = licence_plate.upper()
+        else:
+            raise ValueError('`licence_plate` must be alpha-numeric.')

@@ -22,7 +22,7 @@ from webbrowser import open as browser_open
 from .__version__ import __version__
 from .account import Account
 from .energy import Energy
-from .vehicle.vehicle import Vehicle
+from .vehicle import Vehicle
 
 
 log = getLogger(__name__)                                                   # Enable logging
@@ -315,4 +315,9 @@ class Client(OAuth2Session):
         '''Log in to the Tesla API and populate account data.'''
         self._token_updater()                                               # Try to read token from cache
         self.fetch_token()                                                  # Log in if not authed.
-        self.Account = Account(self)                                        # Instantiate Account subclass.
+        self.account = Account(self)                                        # Instantiate Account subclass.
+        self.vehicles = {
+            vehicle['display_name']: Vehicle(self, vehicle)
+            for vehicle
+            in self.account.vehicles
+        }

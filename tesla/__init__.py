@@ -12,10 +12,10 @@
 
 from locale import setlocale, LC_ALL
 from logging import getLogger
-from .client import Client
 from .account import Account
+from .client import Client
 from .energy import Energy
-from .vehicle.vehicle import Vehicle
+from .vehicle import Vehicle
 
 
 __all__ = [

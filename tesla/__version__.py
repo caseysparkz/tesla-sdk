@@ -11,7 +11,7 @@ __title__ = 'tesla'
 __description__ = 'Python3 library for the Tesla owners API.'
 __author__ = 'caseyspar.kz'
 __author_email__ = 'contact@caseyspar.kz'
-__version__ = '0.1.0'                                                       # Update.
+__version__ = '0.1.1'                                                       # Update.
 __url__ = 'https://github.com/caseysparkz/tesla-sdk'
 __include__ = [                                                             # Update.
     'tesla',
