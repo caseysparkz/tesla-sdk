@@ -401,7 +401,6 @@ class Vehicle():
         self,
         client: type,
         data: dict,
-        licence_plate: Optional[str] = None,
         speed_limit_pin: Optional[int] = getenv('TESLA_SPEED_PIN') or None,
         valet_pin: Optional[int] = getenv('TESLA_VALET_PIN') or None
             ) -> NoReturn:
@@ -412,21 +411,8 @@ class Vehicle():
             :param speed_limit_pin: PIN for speed limit mode.
             :param valet_pin:       PIN for valet mode.
         '''
-        self.data = {**data, **{'licence_plate': str(licence_plate)}}
+        self.data = data
         self.base_url = urljoin(client.base_url, f'vehicles/{data["id"]}/')
         self.headers = {**client.headers, **{'Authorization': f'Bearer {client.token["access_token"]}'}}
-        self.Command = Command(self)
-        self.State = State(self)
-
-    def set_licence_plate(
-        self,
-        licence_plate: str
-            ) -> NoReturn:
-        '''
-        Add licence plate data to Vehicle object.
-            :param licence_plate:   The licence plate of your vehicle.
-        '''
-        if licence_plate.isalnum():
-            self.data['licence_plate'] = licence_plate.upper()
-        else:
-            raise ValueError('`licence_plate` must be alpha-numeric.')
+        self.command = Command(self)
+        self.state = State(self)
