@@ -6,6 +6,7 @@
 '''Tesla SDK'''
 
 from base64 import urlsafe_b64encode
+from datetime import datetime
 from hashlib import sha256
 from json import dump, dumps, load
 from locale import setlocale, LC_ALL
@@ -16,19 +17,16 @@ from stat import S_IWUSR, S_IRUSR, S_IRGRP
 from time import ctime, time
 from typing import NoReturn, Optional, Union
 from urllib.parse import urljoin
-from requests.packages.urllib3 import disable_warnings
-from requests_oauthlib import OAuth2Session
 from webbrowser import open as browser_open
+from requests_oauthlib import OAuth2Session
 from .__version__ import __version__
 from .account import Account
-from .energy import Energy
 from .vehicle import Vehicle
 
 
 log = getLogger(__name__)                                                   # Enable logging
 
 setlocale(LC_ALL, 'en_US.UTF-8')                                            # Set locale.
-disable_warnings()                                                          # Disable urllib3 warnings.
 
 
 class JsonDict(dict):
@@ -44,7 +42,7 @@ class Client(OAuth2Session):
         self,
         email: str,
         user_agent: Optional[str] = f'{__name__}/{__version__}',
-        cache_file: Optional[Path] = Path.home() / '.config/tesla/cache.json',
+        cache_file: Optional[Path] = Path.home() / '.cache/tesla/cache.json',
         sso_base_url: Optional[str] = 'https://auth.tesla.com',
         app_user_agent: Optional[str] = 'TeslaApp/4.10.0',
         verify: bool = True,
@@ -63,27 +61,28 @@ class Client(OAuth2Session):
             raise ValueError('`email` is not set')
 
         super(Client, self).__init__(client_id='ownerapi', **kwargs)
-        self.base_url = 'https://owner-api.teslamotors.com/api/1/'
-        self.email = email
-        self.cache_file = cache_file
-        self.endpoints = dict()
-        self.sso_base_url = sso_base_url
-        self._auto_refresh_url = None
-        self.redirect_uri = f'{self.sso_base_url}/void/callback'
-        self.auto_refresh_url = 'oauth2/v3/token'
         self.auto_refresh_kwargs = {'client_id': 'ownerapi'}
-        self.token = str()
+        self.base_url = 'https://owner-api.teslamotors.com/api/1/'
+        self.cache_file = cache_file
+        self.email = email
         self.headers = {
             'Content-Type': 'application/json',
             'User-Agent': user_agent,
             'X-Tesla-User-Agent': app_user_agent
         }
+        self.sso_base_url = sso_base_url
+        self.token = str()
         self.verify = verify
-        self.Account = None
-        self.Energy = None
-        self.Vehicles = None
+        self.account = None
+        self.vehicles = None
 
-        log.debug(f'Using SSO service URL {self.sso_base_url}')
+        log.debug(f'Using SSO service URL: {self.sso_base_url}')
+        log.debug(f'Using email {self.email}')
+
+        if cache_file.exists():
+            log.debug(f'Found cache file: {self.cache_file}')
+
+        log.debug(f'Using headers: {self.headers}')
 
     @property
     def expires_at(self) -> str:
@@ -91,28 +90,16 @@ class Client(OAuth2Session):
         return self.token.get('expires_at')
 
     @property
-    def auto_refresh_url(self):
-        '''Returns refresh token endpoint URL for auto-renewal access token.'''
-        return urljoin(self.sso_base_url, self._auto_refresh_url) if self._auto_refresh_url else None
-
-    @auto_refresh_url.setter
-    def auto_refresh_url(
-        self,
-        url: str
-            ) -> NoReturn:
-        '''
-        Sets refresh token endpoint URL for auto-renewal of access token.
-            :param url: The URL to set as self._autorefresh_url.
-        '''
-        self._auto_refresh_url = url
+    def expired(self) -> str:
+        '''Returns unix time until token needs refreshing.'''
+        return self.expires_at - time() <= 0
 
     @staticmethod
     def _new_code_verifier() -> str:
         '''Generate code verifier for PKCE per RFC 7636 section 4.1.'''
         code_verifier = urlsafe_b64encode(urandom(32)).rstrip(b'=')
-        code_verifier_string = code_verifier.decode() if isinstance(code_verifier, bytes) else code_verifier
 
-        log.debug(f'Generated new code verifier: {code_verifier_string}.')
+        log.debug(f'Generated new code verifier: {code_verifier.decode("utf-8")}')
 
         return code_verifier
 
@@ -138,13 +125,18 @@ class Client(OAuth2Session):
         try:
             cache = load(open(self.cache_file))
 
+            if cache[self.email]['sso']['expires_at'] <= datetime.now().strftime('%s'):
+                self.expired = True                                         # Token expired. Empty cache.
+
         except BaseException:
             log.warning(f'Cannot load cache: {self.cache_file}')
 
             if not self.cache_file.parent.exists():
-                self.cache_file.parent.mkdir()
+                self.cache_file.parent.mkdir()                              # Create config file parent directory.
 
             cache = dict()
+
+        log.debug(f'Cache: {cache}')
 
         return cache
 
@@ -164,7 +156,7 @@ class Client(OAuth2Session):
             log.error('Cache not updated')
 
         else:
-            log.debug('Updated cache')
+            log.debug(f'Dumped cache to {self.cache_file.absolute().__str__()}')
 
     def _token_updater(
         self,
@@ -174,15 +166,12 @@ class Client(OAuth2Session):
         Handles token persistency. Raises ValueError.
             :param token:
         '''
-        if token:
-            return                                                          # Don't update token twice.
-
         cache = self._load_cache()
 
         if not isinstance(cache, dict):
-            raise ValueError('`cache_loader` must return dict')
+            raise ValueError('`self._load_cache()` must return dict.')
 
-        if self.authorized:                                                 # Write token to cache.
+        if self.authorized and not self.expired:                            # Write token to cache.
             cache[self.email] = {'url': self.sso_base_url, 'sso': self.token}
             self._dump_cache(cache)
 
@@ -198,6 +187,9 @@ class Client(OAuth2Session):
                 self.fetch_token()
             else:
                 log.debug(f'Cached SSO token expires at {ctime(self.expires_at)}.')
+
+        else:
+            log.critical(f'No cached credentials found in {self.cache_file.absolute().__str__()}.')
 
     def authorization_url(
         self,
@@ -238,7 +230,6 @@ class Client(OAuth2Session):
             ) -> dict:
         '''
         Overriddes base method to sign into Tesla's SSO service using Authorization Code grant with PKCE extension.
-        Raises CustomOAuth2Error.
             :param token_path:              Token endpoint URL.
             :kwarg authorization_response:  Authorization response URL.
             :kwarg code_verifier:           Code verifier cryptographic random string.
@@ -256,7 +247,8 @@ class Client(OAuth2Session):
         kwargs.setdefault('verify', self.verify)
         super(Client, self).fetch_token(urljoin(self.sso_base_url, token_path), **kwargs)
         self._token_updater()                                               # Save new token
-        self.Account = Account(self)
+
+        self.account = Account(self)                                        # Instantiate Account subclass.
 
         return self.token
 
@@ -315,8 +307,7 @@ class Client(OAuth2Session):
         '''Log in to the Tesla API and populate account data.'''
         self._token_updater()                                               # Try to read token from cache
         self.fetch_token()                                                  # Log in if not authed.
-        self.account = Account(self)                                        # Instantiate Account subclass.
-        self.vehicles = {
+        self.vehicles = {                                                   # Map vehicles by name.
             vehicle['display_name']: Vehicle(self, vehicle)
             for vehicle
             in self.account.vehicles

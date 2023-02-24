@@ -9,7 +9,7 @@ from locale import setlocale, LC_ALL
 from logging import getLogger
 from typing import Optional
 from urllib.parse import urljoin
-from requests import get as rget, post as rpost
+from requests import get as rget, post as rpost, HTTPError
 
 log = getLogger(__name__)                                                   # Enable logging
 
@@ -33,14 +33,18 @@ def get(
     log.debug(f'Headers: {tesla_object.headers}')
     log.debug(f'Params: {params}')
 
-    response = rget(
-        url,
-        headers=tesla_object.headers,
-        params=params
-    )
-    log.debug(response)
+    try:
+        response = rget(
+            url,
+            headers=tesla_object.headers,
+            params=params
+        )
+        log.debug(response)
 
-    return response.json()['response']
+        return response.json()['response']
+
+    except HTTPError as err:
+        raise err
 
 
 def post(
@@ -63,13 +67,17 @@ def post(
     log.debug(f'Data: {data}')
     log.debug(f'Params: {params}')
 
-    response = rpost(
-        url,
-        headers=tesla_object.headers,
-        data=data,
-        params=params
-    )
+    try:
+        response = rpost(
+            url,
+            headers=tesla_object.headers,
+            data=data,
+            params=params
+        )
 
-    log.debug(response)
+        log.debug(response)
 
-    return response.json()['response']
+        return response.json()['response']
+
+    except HTTPError as err:
+        raise err

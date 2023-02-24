@@ -8,10 +8,10 @@
 #               * __version__ should be incremented with each release.
 
 __title__ = 'tesla'
+__version__ = '0.1.4'                                                       # Update.
 __description__ = 'Python3 library for the Tesla owners API.'
 __author__ = 'caseyspar.kz'
 __author_email__ = 'contact@caseyspar.kz'
-__version__ = '0.1.2'                                                       # Update.
 __url__ = 'https://github.com/caseysparkz/tesla-sdk'
 __include__ = [                                                             # Update.
     'tesla',
